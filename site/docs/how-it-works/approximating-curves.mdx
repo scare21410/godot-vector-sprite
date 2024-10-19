@@ -1,0 +1,140 @@
+---
+title: Approximating curves
+sidebar_position: 10
+---
+
+Modern GPUs are designed to render triangles. To render a curve, we need to convert
+it into a series of triangles. One possible approach (that we don't want to take)
+is to convert the curve into a series of line segments.
+
+This approach is not ideal because the line segments will not be smooth. Let's take
+a look at the circle and its line segment approximation:
+
+<div className="container">
+  <div className="row">
+    <div className="col col--6 text--center">
+      <svg
+        width={200}
+        height={200}
+        className="shadow--md"
+        style={{ color: 'var(--ifm-color-primary)'}}
+      >
+        <circle cx={100} cy={100} r={50} fill="currentColor" stroke="none" />
+      </svg>
+
+      <p>Vector circle</p>
+    </div>
+    <div className="col col--6 text--center">
+      <svg
+        width={200}
+        height={200}
+        className="shadow--md"
+        style={{ color: 'var(--ifm-color-primary)'}}
+      >
+        <polyline
+          points={new Array(20)
+            .fill(0)
+            .map((_, i, { length }) => {
+              const x = 100 + 50 * Math.cos(i * 2 * Math.PI / length);
+              const y = 100 + 50 * Math.sin(i * 2 * Math.PI / length);
+              return `${x},${y}`;
+            })
+            .join(' ')}
+          fill="currentColor"
+          stroke="none"
+        />
+      </svg>
+
+      <p>Approximation using 20 line segments</p>
+    </div>
+  </div>
+</div>
+
+We can easily see that using 20 line segments is not enough to achieve an appearance
+similar to the vector circle. We could increase the number of line segments, but when
+we scale the circle, the line segments will become more apparent.
+
+<div className="container">
+  <div className="row">
+    <div className="col col--6 text--center">
+      <svg
+        width={200}
+        height={200}
+        className="shadow--md"
+        style={{ color: 'var(--ifm-color-primary)'}}
+      >
+        <circle cx={100} cy={100} r={50} fill="currentColor" stroke="none" />
+      </svg>
+
+      <p>Vector circle</p>
+    </div>
+    <div className="col col--6 text--center">
+      <svg
+        width={200}
+        height={200}
+        className="shadow--md"
+        style={{ color: 'var(--ifm-color-primary)'}}
+      >
+        <polyline
+          points={new Array(40)
+            .fill(0)
+            .map((_, i, { length }) => {
+              const x = 100 + 50 * Math.cos(i * 2 * Math.PI / length);
+              const y = 100 + 50 * Math.sin(i * 2 * Math.PI / length);
+              return `${x},${y}`;
+            })
+            .join(' ')}
+          fill="currentColor"
+          stroke="none"
+        />
+      </svg>
+
+      <p>Approximation using 40 line segments</p>
+    </div>
+  </div>
+</div>
+
+<div className="container">
+  <div className="row">
+    <div className="col col--6 text--center">
+      <svg
+        width={200}
+        height={200}
+        viewBox="50 50 25 25"
+        className="shadow--md"
+        style={{ color: 'var(--ifm-color-primary)'}}
+      >
+        <circle cx={100} cy={100} r={50} fill="currentColor" stroke="none" />
+      </svg>
+
+      <p>Vector circle (8x zoom)</p>
+    </div>
+    <div className="col col--6 text--center">
+      <svg
+        width={200}
+        height={200}
+        viewBox="50 50 25 25"
+        className="shadow--md"
+        style={{ color: 'var(--ifm-color-primary)'}}
+      >
+        <polyline
+          points={new Array(40)
+            .fill(0)
+            .map((_, i, { length }) => {
+              const x = 100 + 50 * Math.cos(i * 2 * Math.PI / length);
+              const y = 100 + 50 * Math.sin(i * 2 * Math.PI / length);
+              return `${x},${y}`;
+            })
+            .join(' ')}
+          fill="currentColor"
+          stroke="none"
+        />
+      </svg>
+
+      <p>Approximation using 40 line segments (8x zoom)</p>
+    </div>
+  </div>
+</div>
+
+We would like our curves to be smooth regardless of the scale. We are going to
+look at a different approach to approximating curves in the next section.

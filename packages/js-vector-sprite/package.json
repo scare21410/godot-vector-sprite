@@ -1,0 +1,20 @@
+{
+  "name": "@scare21410/godot-vector-sprite",
+  "description": "Javascript implementation of Godot Vector Sprite conversion algorithm",
+  "version": "0.0.1",
+  "type": "module",
+  "exports": {
+    "development": "./src/index.js",
+    "default": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc --build",
+    "prepublish": "npm run build"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "prettier": "^3.3.3",
+    "typescript": "^5.6.3"
+  },
+  "module": "index.ts"
+}
