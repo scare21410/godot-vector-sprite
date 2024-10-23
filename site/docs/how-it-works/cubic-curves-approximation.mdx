@@ -1,0 +1,46 @@
+---
+title: Cubic curves approximation
+sidebar_position: 30
+---
+import { Bezier3, Vector2 } from '@scare21410/godot-vector-sprite';
+import CubicApproximation from '../../src/infrastructure/react/cubic-approximation';
+
+
+Because the illustration programs such as Adobe Illustrator and Inkscape use cubic Bézier curves
+to draw curves, we need to "downgrade" them to quadratic Bézier curves to be able to draw them.
+Unfortunately cubic Bézier curves cannot be expressed as a quadratic Bézier curve exactly.
+We need to approximate them and make sure the approximation is good enough for our purposes.
+
+Out first attempt is to use the reversal of elevation of the quadratic Bézier curve to
+cubic Bézier curve. Elevation of a quadratic Bézier curve to a cubic Bézier curve is
+always possible using the following formula:
+
+$$
+\begin{align*}
+Q_0 &= P_0 \\
+Q_1 &= \frac{1}{3} P_0 + \frac{2}{3} P_1 \\
+Q_2 &= \frac{2}{3} P_1 + \frac{1}{3} P_2 \\
+Q_3 &= P_2
+\end{align*}
+$$
+
+However, when trying to reverse the process, we get two different values for the control point:
+
+$$
+\begin{align*}
+P_1 &= \frac{3}{2} Q_1 - \frac{1}{2} Q_0 \\
+P_1 &= \frac{3}{2} Q_2 - \frac{1}{2} Q_3
+\end{align*}
+$$
+
+<CubicApproximation
+  width={200}
+  height={200}
+  className="shadow--md primary-color"
+  initialCurve={new Bezier3(
+    new Vector2([40, 160]),
+    new Vector2([80, 40]),
+    new Vector2([120, 40]),
+    new Vector2([160, 160]),
+  )}
+/>

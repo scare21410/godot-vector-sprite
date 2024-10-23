@@ -1,0 +1,558 @@
+---
+title: Appendix A - Approximating cubic Bézier curves by quadratic ones
+sidebar_position: 100
+---
+import { Bezier3, Vector2 } from '@scare21410/godot-vector-sprite';
+import ThirdDegreeCancellation from '../../src/infrastructure/react/third-degree-cancellation';
+
+# Approximating cubic Bezier curves by quadratic ones
+
+<div className="alert--warning alert">
+  **Disclaimer**
+
+  I do not own the content of this page.
+
+  This page is a copy of the original article by [Adrian Colomitchi](http://www.caffeineowl.com/copyright.html)
+  from [caffeineowl.com](http://www.caffeineowl.com/).
+
+  The original [article](http://www.caffeineowl.com/graphics/2d/vectorial/cubic2quad01.html) is no longer available.
+
+  You can still access the original article using the
+  [Wayback Machine](https://web.archive.org/web/20110706030828/http://www.caffeineowl.com/graphics/2d/vectorial/cubic2quad01.html).
+
+  Applets were removed and re-implemented in React. No Java is required to run them.
+
+  I removed the link to the bingo site, if interested, it can be found in the original article.
+  I kept links to the caffeineowl.com website, but they are no longer working.
+</div>
+
+## Fast, precision driven, piecewise degree reduction of cubic Bezier
+
+**In plain-speak translation: convert cubic Bezier to a chain of quadratic Bezier segments,
+with a precision at your choice.**
+
+Interested? Continue reading, you can check your email or play [bingo later](#), there's a long way
+to discover why and how.
+
+Impatients, skip the *"why the methods are working"* part and [jump here](#the-algo) to get
+only the *"how"* part.
+
+Sep. 2006, [Author:](http://www.caffeineowl.com/copyright.html "copyright notice") Adrian Colomitchi
+
+## Abstract
+
+The overall problem approached by the article is:
+
+**within a defined degree of precision, approximate a cubic Bezier curve:**
+
+1. **by one quadratic Bezier or**
+2. **if the first approach is not possible, find a division of the cubic such as each of the
+   resulted curve segments can be approximated by quadratics.**
+
+The article presents some preliminary analysis of the problem and introduces the
+definition a cubic's Bezier zero-approximation and one-approximation quadratics,
+as the quadratics that approximates the best a cubic Bezier for values of the $t$
+parameter closer to 0 and 1 respectively.
+The distance between the control points of the 0- and 1-approximation quadratics is calculated,
+as it plays an important role in adaptive subdivision of a cubic Bezier.
+
+The article introduces a measure of dissimilarity between two parametric curves and used
+this measure as the defect of approximation of a cubic Bezier by a quadratic one.
+Three special quadratics are analyzed in the light of this approximation defect,
+one of them - the mid-point approximation - showing good potential in solving the problem.
+
+The mid-point approximation is used, in conjunction with subdivision of a cubic Bezier
+in two halves, to give a first solution to the problem - the mid-point half-splitting method;
+the method uses simple arithmetic for the approximation, being a very low computational expensive one.
+
+Further, the article presents an important property of the distance between the
+control points of the 0- and 1- approximation quadratics for the first segment
+resulted by a subdivision of a cubic at an arbitrary value $t_{\text{split}}$ for
+the cubic Bezier's parameter: this distance varies with $t_{\text{split}}^3$.
+This allows the approach the subdivision in a true adaptive way, choosing better (and fewer)
+division points than in the case of half-splitting method, the price to be paid being the
+computation of a square and a cubic root at each subdivision iteration. The method is further
+refined such as the square and cubic root computation is required only every two
+subdivision iterations.
+
+As usual, the article is supported by interactive java applets, so please feel free to
+interact and modify any of the configuration presented, by click-n-dragging any of the
+points represented by small **squares** (note :diamond shaped points are for position marking
+purposes only - use the square handles). The applets are compiled using **Java 1.4**,
+but a Java Runtime Environment as low as **ver. 1.2** should be sufficient to run them.
+
+<div className="alert--info alert">
+  **Note**
+
+  The applets were re-implemented in React, Java is not required to run them.
+</div>
+
+## Quick tests for cubic to quadratic conversion
+
+A quadratic Bezier can always be represented by a cubic one by applying the degree elevation
+algorithm. The resulting cubic representation will share its anchor points with the original
+quadratic, while the control points will be at $2/3$ of the quadratic handle segments:
+
+$$
+\mathbf{C}_1 = \frac{2\mathbf{C} + \mathbf{P}_1}{3} \\
+\mathbf{C}_2 = \frac{2\mathbf{C} + \mathbf{P}_2}{3}
+$$
+
+As expected, *not always* a cubic Bezier curve can be represented exactly by a quadratic one.
+Here are some consequences of the 3rd degree term of a cubic Bezier:
+
+1. A cubic Bezier may have inflection points. A quadratic has a constant bending direction
+  (*thus, no inflection points*).
+2. A cubic Bezier may display a loop (recurve behavior)[^1]. *A quadratic never recurve*.
+
+A quick test of whenever the approximation of cubic to a quadratic Bezier is possible or not
+would *primarily address the differences above*. I feel that it is possible to obtain some
+formulae to implement the tests above (in fact, the case of inflexion points
+[was addressed previously](http://www.caffeineowl.com/graphics/2d/vectorial/cubic-inflexion.html)),
+but such tests would not be too useful for our goals as they require a non-trivial computational effort.
+
+## Magnitude of the 3rd degree term of a cubic Bezier
+
+A [previous article](http://www.caffeineowl.com/graphics/2d/vectorial/cubic-inflexion.html#formula)
+brought the parametric expression of a cubic Bezier under the form:
+
+$$
+\mathbf{P}(t) = \mathbf{P}_1 + 3 t (\mathbf{C}_1 - \mathbf{P}_1) + 3 t^2 (\mathbf{C}_2 - 2 \mathbf{C}_1 + \mathbf{P}_1) + t^3 (\mathbf{P}_2 - 3\mathbf{C}_2 + 3\mathbf{C}_1 - \mathbf{P}_1)
+$$
+
+Now, if the magnitude of the 3rd degree term is *small enough* (ideally zero),
+the cubic can be approximated by a quadratic.
+
+In fact, the 3rd degree term expresses the distance between the points corresponding
+to the same value of the parameter $t$, one on the cubic and the other on the quadratic
+obtained by canceling the 3rd degree term of the cubic. This distance will be:
+
+$$
+t^3 \cdot |\mathbf{P}_2 - 3\mathbf{C}_2 + 3\mathbf{C}_1 - \mathbf{P}_1| \qquad \mathbf{(2)}
+$$
+
+where $|v|$ denotes the modulus of $v$ (i.e., $\sqrt{v_x^2 + v_y^2}$). The maximum distance
+is obtained for $t = 1$ and is $|\mathbf{P}_2 - 3\mathbf{C}_2 + 3\mathbf{C}_1 - \mathbf{P}_1|$.
+
+**Canceling the 3rd degree term of a cubic will result in a quadratic approximation
+of the original cubic; the magnitude of the 3rd degree coefficient acts as the
+precision of approximation.**
+
+It is worth noting that the quadratic approximation will share its starting anchor point with the
+original cubic, *but not its end point* (unless the cubic can be exactly approximated by the quadratic).
+The following explores the properties of the quadratic obtained by canceling the 3rd degree term.
+
+<ThirdDegreeCancellation
+  width={640}
+  height={480}
+  className="shadow--md primary-color"
+  initialCurve={new Bezier3(
+    new Vector2([35, 150]),
+    new Vector2([80, 65]),
+    new Vector2([120, 65]),
+    new Vector2([165, 150])
+  )}
+/>
+(applet code=com.caffeineowl.cubic2quad.ThirdDegreeCancelationApplet)
+
+We'll start by computing the positions of the:
+
+- the control point $C'$ *and*
+- the end anchor point $P'_2$
+
+of the quadratic Bezier obtained by canceling the 3rd degree term of the original cubic.
+The parametric expression of this quadratic is:
+$$
+\mathbf{Q}'(t) = \mathbf{P}_1 + 2 t (\mathbf{C}' - \mathbf{P}_1) + t^2 (\mathbf{P}'_2 - 2 \mathbf{C}' + \mathbf{P}_1) \qquad (3)
+$$
+
+By equaling the 1st and 2nd degree term coefficients of the relation above with the one
+parametric expression of the original cubic, one can derive the position of control and end
+points of the quadratic approximation as:
+$$
+\mathbf{C}' = \frac{3\mathbf{C}_1 - \mathbf{P}_1}{2} \\
+\mathbf{P}'_2 = \mathbf{P}_1 - 3\mathbf{C}_1 + 3\mathbf{C}_2
+$$
+
+The applet above depicts in yellow this quadratic. One can note that:
+
+1. It is the start end[^2] of the original cubic that is the best approximated by this quadratic.
+   The worst approximated is the finish end of the cubic. \
+   **Definition:** the quadratic obtained by canceling the 3rd degree term of a cubic
+   Bezier will be called, in the followings, the **_0_ (zero)-approximation quadratic;**
+
+2. For the zero-approximation quadratic:
+   - The start anchor point is common with the start anchor of the approximated cubic
+   - The control point is outer of the first cubic handle segment and one and a half
+     the distance between the anchor point and the first control point of the original cubic. \
+     The expression of the control point of the zero-approximation quadratic is
+     $$\mathbf{C}' = \frac{3 \mathbf{C}_1 - \mathbf{P}_1}{2} = \left(1 - \frac{3}{2}\right) \mathbf{P}_1 + \frac{3}{2} \mathbf{C}_1$$
+   - The end of the zero-approximation quad is at the point with the position given by $$\mathbf{P}'_2 = \mathbf{P}_1 - 3\mathbf{C}_1 + 3\mathbf{C}_2.$$
+
+   **Note:** that the finish anchor point of the cubic is not involved in any of the above relations,
+   therefore the 0-approximating quadratic can't be expected to deliver a good approximation
+   near the finish anchor point (just modify the position of the finish anchor
+   point - $P_2$ - in the applet below to see that the 0-approximating quadratic - in yellow - does
+   not change)
+
+(applet code=com.caffeineowl.cubic2quad.ThirdDegreeCancelationApplet)
+
+The same reasoning can be performed for the other end of the cubic Bezier, resulting in
+a quadratic that will start in the $P_2$ anchor point, will have the control point in the
+location given by $C'' = (3C_2 − P_2)/2$ and the second anchor point will be at the
+location given by $P''_1 = P_2 − 3C_2 + 3C_1$.
+This quadratic, which I'll name the **1(one)-approximation quadratic** from now on, will
+approximate better the original cubic for values of the parameter $t$ closer to 1 and
+worse for values closer to 0.
+The applet on the left depicts both of these quadratics approximating the initial cubic,
+with the 0-approximating quadratic drawn in yellow and the
+[psychedelic purple](http://en.wikipedia.org/wiki/Purple_(color)#Psychedlic_Purple) for the
+1-approximating quadratic.
+
+It is interesting to note that:
+
+1. The distance between the control points of 0- and 1-approximation quadratic is
+$$
+\begin{align*}
+D_{0-1} &= |\mathbf{C}' - \mathbf{C}''| = \frac{|\mathbf{P}_2 - 3\mathbf{C}_2 + 3\mathbf{C}_1 - \mathbf{P}_1|}{2} \quad (*)
+\end{align*}
+$$
+
+2. The maximum distance between two points:
+   - considered for the same value of parameter $t$ ...
+   - one on the cubic and the other one on any of the zero- or one-approximating quadratics
+
+   is twice the distance between the control points of the 0- and 1-approximation quadratic (see above):
+   $|\mathbf{P}_2 - 3\mathbf{C}_2 + 3\mathbf{C}_1 - \mathbf{P}_1|$ (just use **(2)** with $t = 1$).
+
+   **$D_{0-1}$** - It seems that the distance between the control points of the zero- and
+   one-approximation (denoted for the followings with **$D_{0-1}$**) gives an indication about
+   the chance of approximating a cubic by a single quadratic: the closer to 0 the better the
+   chance to find such an approximation.
+
+## Defect of approximating a cubic by a quadratic
+
+To measure how good the approximation of a cubic by a quadratic is, I'll define a distance[^3]
+between two parametric curves as *the maximum distance between the points on the two curves
+that corresponds to the same value of the parameter $t$*. Of course, the definition supposes
+that the two parametric curves are defined for a variation of the parameter in the same range
+(i.e., 0..1).
+
+The distance defined above acts as a measure of *dissimilarity* between the two parametric curves.
+With this definition, one can measure the quality of an approximation by how *low* this distance is.
+If this distance vanishes, the two curves will be identical, in both the shape *and the mode* in
+which they are traversed[^4].
+
+In the context of approximating a cubic Bezier with a quadratic one, the distance between the
+original cubic and its approximation will be named in the followings
+**the defect of the approximation**.
+
+Examples:
+
+1. The defect of approximating a cubic by its *0*-approximation quadratic will be
+   $|\mathbf{P}_2 - 3\mathbf{C}_2 + 3\mathbf{C}_1 - \mathbf{P}_1|$
+   (obtained for a $t$ parameter value of 1)
+2. Similarly, the defect of approximating a cubic by its *1*-approximation quadratic will be
+   $|\mathbf{P}_2 - 3\mathbf{C}_2 + 3\mathbf{C}_1 - \mathbf{P}_1|$ (obtained for a $t$ = 1)
+
+## In the search for the perfect approximation
+
+As seen above, using only one of the cubic anchors in the quadratic approximation leads to
+less precise approximation. What if trying quadratic approximations that shares both ends with
+the cubic to approximate?
+
+The defect of approximating a cubic curve by a quadratic *sharing the anchor points with the
+original cubic* and having **C** as the position of its control point, is given by the expression[^5]:
+<a name="formula4"></a>
+$$
+t (1 - t) |2\mathbf{C} - 3\mathbf{C}_1 + \mathbf{P}_1 + 3t (\mathbf{P}_2 - 3\mathbf{C}_2 + 3\mathbf{C}_1 - \mathbf{P}_1)| \qquad (4)
+$$
+
+(applet code=com.caffeineowl.cubic2quad.CubicApprox01Applet)
+
+The applet on the left explores how the distance modeling the defect of approximation varies
+for the following particular cases, all of them being considered for quadratics that share the
+ends with the cubic Bezier. Displayed in red is the segment between two points
+(one on the cubic the other on the approximating quadratic) corresponding to the same of the
+$t$ parameter (adjustable using the slider below the applet):
+
+- [configuration 1](javascript:setLevel('zero', 1) "Display 0-approximation quad") -
+  the control point of the approximating quadratic is at the location of the control of
+  the 0-approximation quadratic;
+- [configuration 2](javascript:setLevel('one', 2) "Display 1-approximation quad") - the control
+  point of the approximating quadratic is at the location of the 1-approximation control;
+- [configuration 3](javascript:setLevel('mid', 4) "Display 'mid'-approximation quad") - the
+  control point of the approximating quadratic is at middle of the segment between the
+  0-approximation and the 1-approximation quadratics.
+
+One can note that, when the control is chosen as at mid-distance between 0-approximation
+and 1-approximation quad controls (the 3<sup>rd</sup> cfg above), the approximating
+quad and the cubic look like they are sharing their mid-points.
+
+A more in-depth exploration is possible by applying [formula (4)](#formula4) for the three
+configuration above and studying the distance between two points, that corresponds to the
+same value of the $t$ parameter, one of each on the cubic the other on the quadratic.
+The applet below assists this exploration; the chart at the applet's bottom displays the
+distance between the two points (one on cubic the other on the approximating quadratic).
+Play with the cubic and quadratic points, but expect that a cubic displaying inflexion
+points or recurve behavior never to have a good quadratic approximation.
+
+(applet code=com.caffeineowl.cubic2quad.GeneralDefectApplet.class)
+
+- [configuration 1](javascript:setLevel('defect1', 1)) - the case of approximation of a cubic by a
+quadratic that shares the anchor points with the cubic and has the same control point as the
+0-approximation quadratic ($\mathbf{C} = \frac{3\mathbf{C}_1 - \mathbf{P}_1}{2}$), leads to the
+defect of approximation be the maximum of the expression:
+$$
+t^2 (1 - t) |\mathbf{P}_2 - 3\mathbf{C}_2 + 3\mathbf{C}_1 - \mathbf{P}_1|
+$$
+
+This maximum is:
+$$
+\frac{4}{27} |\mathbf{P}_2 - 3\mathbf{C}_2 + 3\mathbf{C}_1 - \mathbf{P}_1| \qquad (5)
+$$
+
+obtained for the $t$ parameter value of $\frac{2}{3}$
+
+- [configuration 2](javascript:setLevel('defect2', 2)) - the approximation using the control of the 1-approximation quadratic will have the same defect, obtained for a $t$ parameter value of $\frac{1}{3}$;
+- [configuration 3](javascript:setLevel('defect0', 0)) - the quadratic approximation having the control point at mid-distance between the control points of *0-* and 1-approximation quadratics ($\mathbf{C} = \frac{3\mathbf{C}_2 - \mathbf{P}_2 + 3\mathbf{C}_1 - \mathbf{P}_1}{4}$) and the same anchor points as the original cubic, formula (3) above leads to an approximation defect of only:
+
+$$
+\frac{\sqrt{3}}{18} D_{0-1} \qquad (6)
+$$
+
+obtained for a $t$ parameter value of $\frac{1 - \frac{1}{\sqrt{3}}}{2}$ or
+$\frac{1 + \frac{1}{\sqrt{3}}}{2}$
+
+Another interesting fact is that the above defined quadratic has its "mid-point" on the same
+location as the "mid-point" of the cubic: $(\mathbf{P}_2 + 3\mathbf{C}_2 + 3\mathbf{C}_1 + \mathbf{P}_1)/8$
+(simply use $(3\mathbf{C}_2 - \mathbf{P}_2 + 3\mathbf{C}_1 - \mathbf{P}_1)/4$ as the position
+of the control point in the formula for the
+[mid point of a quadratic](http://www.caffeineowl.com/graphics/2d/vectorial/bezierintro.html#midQuad)).
+
+The third configuration seems particularly promising: the defect of the approximation is less than
+10% of the $D_{0-1}$. For this reason, it is worth bearing a name: in short,
+this approximation will be called the **mid-point approximation** for the rest of the article.
+
+I haven't discovered an analytic way to prove it, but it seems the mid-point approximation
+(the 3rd configuration) is the best. Or is it? Well, not quite so: here is one
+[configuration](javascript:setLevel('defect3', 3)) that doesn't, and another one [here](javascript:setLevel('defect4', 4))
+(hint: establish any of the two configurations then click on the
+[configuration 3](javascript:setLevel('defect0prime', 0));
+notice the defect being reported as smaller for cfg 3, even if the approximation is visibly
+worse than the initial one). For the special case of the last two configurations shown,
+the problem stays in the way the defect is defined: it keeps track not only on shape of the curve,
+but the way in which it is traversed as well.
+
+Well, maybe the perfect approximation wasn't found, but let's see what's the good side of what
+*was* found so far. Particularly, focusing on equation (6), one may note that:
+
+- the computation of the approximation defect is pretty inexpensive: if one will rely,
+  when comparing the defect with the desired precision, on the square of distances instead
+  of the distances themselves the computation involves only basic arithmetic;
+- using a strong criterion will result in the approximation (if any) being of good quality
+- however strong, the mid-point approximation seems to be a quite permissive one:
+  one can be sure that *the mid-point approximation is good enough if the distance between
+  the control points of 0- and 1-approximation quadratics*
+  (**$D_{0-1}$** = $|\mathbf{P}_2 - 3\mathbf{C}_2 + 3\mathbf{C}_1 - \mathbf{P}_1|/2$)
+  *is approximately **10 times greater than the acceptable defect*** (*$\sqrt{3}/18 \lt 0.096$*).
+
+## Quadratic approximation of a cubic Bezier by half-splitting
+
+For the cases the cubic cannot be reasonably approximated by a single quadratic, one can try to
+divide the cubic into more than one segments that **can** be better approximated by quadratics.
+
+- subdivide the cubic in two "halves"
+- assess the precision of the quadratic approximation: if not good enough,
+  continue the sub-division.
+
+(applet code=com.caffeineowl.cubic2quad.CubicToQuadDivisionApplet1.class)
+
+The applet on the left implements the above, using the mid-point approximation at the second step:
+the slider allows the adjustment of the desired precision (in the range of 0.01-100 points).
+As expected, the lesser the tolerance, the more divisions required.
+
+What about the inflexion points, how the algorithm above deals with them? Well, simply by
+dividing the cubic around the inflexion point until it becomes so flat it can be approximated
+with a pretty flat quadratic. Here's [a configuration](javascript:quadByDiv.setMode(1)) that
+shows this effect: for the start, reduce the required precision to over 10 points value for
+the accepted defect. Notice that the cubic segment, even exposing one inflexion point,
+will be approximated by a single quadratic segment. Imagine the scale reduced tenfold and
+you'll find the approximation to be a pretty good one.
+
+Now, with the same configuration and required precision, mark the "Detect inflexion" check-box:
+this will detect the inflexion point, divide the cubic first at this point and apply the algorithm
+on the two resulted cubic segments. By doing so, the resulted approximation will be more precise,
+since the algorithm will be required to approximate only cubic segments with constant bending direction.
+Granted, dividing first the cubic in its inflexion point *may* result in increasing the number of
+quadratic segments, and most of the times this will be the result: more quadratic segments and
+a better approximation.
+But there are configurations for which the division in the inflexion points will decrease
+the number of resulted quadratic segments, without impacting on the precision of the approximation.
+For example, for *a required precision of 0.5*, this [configuration](javascript:quadByDiv.setMode(2))
+will require less quadratic segments if first divided at the inflexion point position:
+establish 0.5 for the precision and toggle on and off the "Detect inflexion" check-box.
+However, when using the inflexion points detection, the very [same configuration](javascript:quadByDiv.setMode(2))
+performs worse in the number of quadratic segments if the required precision is extremely high
+(try *0.01*, which is $10^{-4}$ — $10^{-5}$ of the maximum curve extension).
+
+## Quadratic approximation of a cubic Bezier by adaptive division
+
+The algorithm of halving the cubic until the segments can be reasonably approximated by
+a quadratic is easy to implement and requires low computation effort. However, it simply
+does not attempt to exploit the cubic characteristics, but only to adjust to them,
+resulting in a possible higher than necessary number of segments.
+
+The idea behind adaptive division is:
+
+- consider a division point at the maximum value of $t$ *for which the first cubic segment can
+  still be approximated by a quadratic* within the required precision;
+- repeat the previous step for the remaining of the cubic.
+
+If the first step can be easily achieved, one can expect fewer quadratic segments to result in
+approximation.
+
+Let's try to use the mid-point approximation with this, knowing that the precision of the
+approximation is governed by the distance between the control points of the
+0- and 1-approximation quadratics **$D_{0-1}$**.
+Suppose that a cubic Bezier defined by the points $P_1$, $C_1$, $C_2$ and $P_2$ is
+subdivided at a parameter value of $t_{\text{split}}$. Well, if one cares to calculate
+the distance between the 0- and 1-quadratic approximation for *the first cubic
+segment* — $d_{0-1}^1(t)$, a nice surprise awaits[^6]. For the impatient, here is the spoiler:
+$$
+d_{0-1}^1(t_{\text{split}}) = t_{\text{split}}^3 \cdot \frac{|\mathbf{P}_2 - 3\mathbf{C}_2 + 3\mathbf{C}_1 - \mathbf{P}_1|}{2} = t_{\text{split}}^3 \cdot D_{0-1} \qquad (6)
+$$
+
+Now, the formula **(6)** is quite remarkable[^6]: it simply states that the distance between
+the control points of 0- and 1-approximations for the first cubic segment obtained by subdividing a
+cubic Bezier at a value $t_{\text{split}}$ of the parameter simply varies with the cube
+of $t_{\text{split}}$. It is so simple that allows the following approach when attempting to
+approximate a cubic Bezier by a daisy-chain of quadratics when imposing a maximum tolerance
+of *prec*:
+
+(applet code=com.caffeineowl.cubic2quad.CubicToQuadDivisionApplet1.class)
+
+1. Compute the distance **$D_{0-1}$** between the control points of 0- and 1-approximation
+   quadratics (use [formula *](#pseudoQuadDist))
+2. Compute $t_{\text{max}}$ as the root of equation: \
+   $\frac{\sqrt{3}}{18} D_{0-1} t_{\text{max}}^3 = \text{prec}$
+3. If $t_{\text{max}}$ is less than 1.0:
+   * Subdivide the cubic at $t_{\text{max}}$
+   * Approximate the first segment using mid-point approximation
+   * Enter again the first step with the second cubic segment
+4. If $t_{\text{max}}$ is greater than 1.0, the cubic Bezier can be directly approximated by
+   the mid-point approximation within the specified tolerance (i.e., use mid-point approximation
+   and exit the cycle)
+
+The applet on the left implements the above algorithm, which I'd like to call the "simple adaptive
+division using mid-point approximation".
+
+Note that, concerning the computational cost, the adaptive division requires higher cost
+*per division* than the half-splitting one: the division effort and the computation of
+the **$D_{0-1}$** distance is pretty much the same, but the adaptive division requires the
+computation of a square root (at step 1) and a cubic root (at step 2). The only chance of
+having the adaptive division performing better concerning the computational effort is to
+have a significant reduction in the number of required divisions (number of resulted segments).
+
+But let us postpone a while the comparison in the number of resulted segments. Please note
+first that the adaptive division algorithm above remains the same if one substitutes
+$t$ with $1 - t$ (i.e., the cubic is explored backwards). Therefore, running through
+step 1 and 2, one finds not one but two division points, corresponding to $t_{\text{max}}$
+and $1 - t_{\text{max}}$ (adaptive symmetric division). This means:
+
+- One can pay the cost of computing the square root and cubic root *only once per two divisions*
+- The 3<sup>rd</sup> and 4<sup>th</sup> steps are to be replaced with:
+  1. If $t_{\text{max}}$ is less than *0.5*:
+     - Subdivide the cubic at $t_{\text{max}}$ and $1 - t_{\text{max}}$
+     - Approximate the first segment and third segments using mid-point approximation
+     - Enter again the first step with the second (mid) cubic segment
+  2. If the resulted $t_{\text{max}}$ is greater than *0.5*, divide the cubic in two halves and
+     use the mid-point approximation for each of them and terminate. This is because the first
+     and third quad segments will overlap, letting no room for the second/mid segment.
+  3. If the resulted $t_{\text{max}}$ is greater than 1.0, simply use the mid-point approximation
+     and terminate, because the cubic can be approximated by a single quadratic segment within
+     the specified precision.
+
+Not only this will save some computational effort, but in some cases the approximation is
+slightly better: the division points are more equally distributed along the initial cubic Bezier.
+
+Finally, concerning the number of resulted segments: I didn't run (yet) the adaptive division
+algorithm(s) on a randomly generated set of cubics to extract statistical data, but my explorations
+suggest that the adaptive division performs 0%-45% better than the half-splitting one
+(both using the mid-point approximation).
+One may find here an [applet can be used to explore the performance of the 3 algorithms]
+(javascript:popUpWindow('./cubic2quad02.html', 20, 20, 740, 640))
+(half-split, simple adaptive and symmetric adaptive) in terms of the number of quadratic segments
+used in subdivision.
+
+## Conclusion
+
+The article presented:
+
+1. A measure of dissimilarity between two parametric curves
+2. A very simply to compute, yet a fairly good approximation of a cubic segment by a quadratic one:
+   the mid-point approximation quadratic, sharing the anchor points with the cubic Bezier and with
+   the control point at the mid-distance between the control points of zero- and one approximation:
+   $\mathbf{C} = \frac{3\mathbf{C}_2 - \mathbf{P}_2 + 3\mathbf{C}_1 - \mathbf{P}_1}{4}$.
+   The approximation is very easy to compute, requiring only arithmetic operations
+   (even better, addition/subtraction/bit-shifting are sufficient if only positive integer operands
+   are assumed);
+3. The defect of approximating a cubic segment by the mid-point quadratic segment:
+   $\left(\frac{\sqrt{3}}{36}\right)|\mathbf{P}_2 - 3\mathbf{C}_2 + 3\mathbf{C}_1 - \mathbf{P}_1|$;
+4. The half-splitting mid-point algorithm to subdivide a cubic Bezier until the resulted segments
+   can be approximated by quadratics Bezier within an imposed precision. The advantage is the
+   simplicity of implementation and a small computational effort;
+5. Two adaptive algorithms to subdivide a cubic Bezier such that the resulted segments can be
+   approximated by quadratics Bezier within an imposed precision. This one has the advantage of
+   generating a smaller number of segments, possibly[^7] with the price of slighter increase in
+   the computational effort.
+
+---
+
+[^1]: **Note:** I reckon that a proper demonstration for the statement "if a cubic Bezier displays a
+      recurve behavior, then the curve's handle segments intersect" is possible. I feel that is
+      possible to find other necessary conditions for a cubic Bezier to display recurve behavior,
+      conditions that are stronger but still computational easy. Though, as I said, I don't really
+      have time for the dig, and besides presenting them would be are out of the scope of the
+      present article.
+
+[^2]: **Note:** the quadratic Bezier obtained in this way is the 2nd degree truncation of the
+      Taylor "series" of the original cubic around $t = 0$ (yeah ...right... - a series with 3
+      terms only). It's quite natural to offer a better approximation near the starting end of
+      the cubic and the worst one for the finish end.
+
+[^3]: **Note:** it can be shown that the definition above describes a distance:
+      - $dist(\textbf{u}, \textbf{v}) >= 0$ and $dist(\textbf{u}, \textbf{v}) = 0$
+        if and only when $\textbf{u} = \textbf{v}$
+      - $dist(\textbf{u}, \textbf{v}) = dist(\textbf{v}, \textbf{u})$
+      - $|\textbf{u} - \textbf{v}| <= |\textbf{u} - \textbf{w}| + |\textbf{w} - \textbf{v}|$
+        (the triangle inequality)
+
+[^4]: **Note:** because the definition also includes *the mode in which the parametric curves
+      are traversed*, it acts as a very strong criterion of the way in which one curve approximates
+      the other. As an example, the curves:
+      $$
+      \begin{align*}
+      C_1(t) &= (x(t) = \cos(t),\ y(t) = \sin(t)) \qquad and \\
+      C_2(t) &= (x(t) = -\cos(t),\ y(t) = -\sin(t))
+      \end{align*}
+      $$
+      are both describing *the same shape* (unit-radius circle), but the distance defined previously
+      will be always 2 (the length of the diameter).
+
+[^5]: **Note:** the expression was obtained by considering the parametric expressions for a cubic and
+      a quadratic that share the same anchor points. The calculus can be laborious if done by paper
+      and pencil. Fortunately, there are tools for symbolic calculus; personally, I used a trial
+      version of MuPad from [SciFace](http://www.sciface.com/) - same result quicker and with no
+      financial pressure on my budget.
+
+[^6]: Note: so simple that, after performing the calculus using MuPad, I couldn't believe my eyes
+      and went into doing it by hand, which I wouldn't advise anyone to repeat unless one has a
+      sick pleasure in performing long calculations with pen-and-paper. My advice: better use
+      the spoiler and be convinced of this result by seeing it used in the implementation of
+      the interactive applets.
+
+[^7]: Note: the increase in effort is very much dependent on the platform used for performing
+      the computation: for a math library using directly the CPU's floating point unit, there is
+      likely to pay pretty much the same price due to the reduction in the number of quadratic
+      segments required for a decent approximation.

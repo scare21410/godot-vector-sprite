@@ -4,8 +4,13 @@
   "version": "0.0.1",
   "type": "module",
   "exports": {
-    "development": "./src/index.js",
-    "default": "./dist/index.js"
+    ".": {
+      "development": "./src/index.ts",
+      "import": {
+        "types": "./src/index.ts"
+      },
+      "default": "./dist/index.js"
+    }
   },
   "scripts": {
     "build": "tsc --build",

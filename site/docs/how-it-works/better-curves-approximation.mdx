@@ -3,7 +3,7 @@ title: Better curves approximation
 sidebar_position: 20
 ---
 
-import {GpuBezierCurveTriangle} from '@site/src/infrastructure';
+import GpuBezierCurveTriangle from '@site/src/infrastructure/react/gpu-bezier-curve-triangle';
 
 As we saw in the [previous section](./approximating-curves/),
 approximating curves with line segments is not ideal.
@@ -119,9 +119,9 @@ This makes them a great choice for rendering vector graphics on the GPU.
 
 ## GPU rendering
 
-The algorithm described in the [GPU Gems article](https://developer.nvidia.com/gpugems/gpugems3/part-iv-image-effects/chapter-25-rendering-vector-art-gpu)
-uses a single triangle to render a quadratic Bézier curve. The triangle is defined by the
-start point $P_0$, the control point $P_1$, and the end point $P_2$.
+In the example below, we render a quadratic Bézier curve on a single
+(gray) triangle using special fragment shader that discards fragments
+outside the curve. The algorithm is described in the [GPU Gems article](https://developer.nvidia.com/gpugems/gpugems3/part-iv-image-effects/chapter-25-rendering-vector-art-gpu).
 
 <div className="container">
   <div className="row">
@@ -130,9 +130,6 @@ start point $P_0$, the control point $P_1$, and the end point $P_2$.
         className="shadow--md"
         width={200}
         height={200}
-        p0={{x: 20, y: 180}}
-        p1={{x: 180, y: 20}}
-        p2={{x: 180, y: 180}}
       />
       <p>GPU rendered quadratic Bézier curve</p>
     </div>
@@ -151,17 +148,81 @@ start point $P_0$, the control point $P_1$, and the end point $P_2$.
   </div>
 </div>
 
+To keep things simple, we didn't implement antialiasing in the example above,
+so just squint your eyes for the time being 😊.
+Even without antialiasing, you can see that zooming in on the curve
+does not reveal any line segments.
+
+Let's now quickly break down shaders used in the example.
+
+### Vector shader
+
+```glsl
+attribute vec2 a_position;
+attribute vec2 a_bezier_uv;
+uniform mat4 u_projection;
+varying vec2 v_bezier_uv;
+
+void main() {
+  v_bezier_uv = a_bezier_uv;
+  gl_Position = u_projection * vec4(a_position, 0.0, 1.0);
+}
+```
+
+The vector shader is very simple. Its inputs are:
+* `a_position` - vertex position,
+* `a_bezier_uv` - UV coordinates that we use to calculate point on the Bézier curve.
+* `u_projection` - projection matrix.
+
+The shader does two things:
+* interpolates `a_bezier_uv` and passes it to the fragment shader.
+* calculates vertex position in screen space.
+
+The only interesting part is the `v_bezier_uv` variable, which we use to pass UV coordinates
+of the Bézier curve to the fragment shader. We use these coordinates to calculate the point
+on the curve in the fragment shader. Each vertex of the triangle has specially selected
+UV coordinates that make calculation of the point on the curve easier.
+
+Those coordinates in UV space are constant for each triangle:
+* $P_0 = (0, 0)$
+* $P_1 = (0.5, 0)$
+* $P_2 = (1, 1)$
+
+We'll cover the math behind this in the next section.
+
+### Vector fragment shader
+
+```glsl
+precision mediump float;
+varying vec2 v_bezier_uv;
+
+void main() {
+  if (v_bezier_uv.x * v_bezier_uv.x - v_bezier_uv.y <= 0.0) {
+    gl_FragColor = vec4(62.0/255.0, 142.0/255.0, 204.0/255.0, 1.0); // blue
+  } else {
+    gl_FragColor = vec4(235.0/255.0, 237.0/255.0, 240.0/255.0, 1.0); // gray
+  }
+}
+```
+The fragment shader is even simpler. It checks if the fragment is inside the curve
+and sets the color accordingly. In this example we use blue color for the curve
+and gray for the background so we can see the triangle shape. In real application
+we would discard fragments outside the curve.
+
+The equation for the curve in UV space is $u^2 - v = 0$. Here we reap the benefits of
+setting Bézier UV coordinates to our special, precalculated values.
+
 ## Little math never killed nobody
 
-We'll be doing crazy math stuff with quadratic Bézier curves, therefore we need to
-define them mathematically.
+So what is the math behind all this? Why does it work?
 
-A quadratic Bézier curve is defined by three points the start point $P_0$,
+Let's first start with the definition of a quadratic Bézier curve:
+
+A quadratic Bézier curve is defined by three points: the start point $P_0$,
 the control point $P_1$, and the end point $P_2$. The curve starts at the start point
-and ends at the end point, but it does not pass through the control point.
+and ends at the end point, but it does not (usually) pass through the control point.
 
 The curve is defined by the following equation:
-
 $$
 B(t) = (1 - t)^2 P_0 + 2(1 - t)t P_1 + t^2 P_2
 $$
@@ -175,8 +236,65 @@ where:
 
 The curve is defined for $0 \leq t \leq 1$.
 
-We can see that if we set $t = 0$, we get the start point $B(0) = P_0$.
+We won't analyze the equation in detail, but we can see that the curve is a combination
+of the three points $P_0$, $P_1$, and $P_2$. How much each point contributes to the curve
+depends on the time parameter $t$.
 
-If we set $t = 1$, we get the end point $B(1) = P_2$.
+If we set $t = 0$, we get the start point $B(0) = P_0$.
+For $t = 1$, we get the end point $B(1) = P_2$.
+At $t = 0.5$, we see that $B(0.5) = 0.25 P_0 + 0.5 P_1 + 0.25 P_2$ - all
+points contribute to the curve, meaning the curve does not pass through the control point $P_1$.
 
-In the middle at $t = 0.5$, we see that $B(0.5) = 0.25 P_0 + 0.5 P_1 + 0.25 P_2$.
+<div className="text--center">
+  <svg width="200" height="200" xmlns="http://www.w3.org/2000/svg" className="shadow--md primary-color">
+    <rect width="100%" height="100%" fill="white"/>
+
+    {/* Control triangle */}
+    <polygon points="20,180 180,20 180,180" fill="none" stroke="gray" strokeDasharray="5,5"/>
+
+    {/* Bezier curve */}
+    <path d="M20,180 Q180,20 180,180" fill="currentColor"/>
+
+    {/* Points */}
+    <circle cx="20" cy="180" r="4" fill="red"/>
+    <circle cx="180" cy="20" r="4" fill="red"/>
+    <circle cx="180" cy="180" r="4" fill="red"/>
+
+    {/* Labels */}
+    <text x="10" y="195" fontSize="14" fill="black">P₀</text>
+    <text x="185" y="15" fontSize="14" fill="black">P₁</text>
+    <text x="185" y="195" fontSize="14" fill="black">P₂</text>
+  </svg>
+  <p>Quadratic Bézier curve</p>
+</div>
+
+Let's see how we can calculate the point on the curve for a given UV coordinate.
+This equation is actually two equations in a trench coat, so let's split it into two parts,
+one for the u-coordinate and one for the v-coordinate:
+
+$$
+\begin{align*}
+u(t) &= (1 - t)^2 P_{0u} + 2(1 - t)t P_{1u} + t^2 P_{2u} \\
+v(t) &= (1 - t)^2 P_{0v} + 2(1 - t)t P_{1v} + t^2 P_{2v}
+\end{align*}
+$$
+
+Now let's substitute our special UV coordinates for the Bézier curve. As a reminder:
+$P_0 = (0, 0)$, $P_1 = (0.5, 0)$, and $P_2 = (1, 1)$.
+
+$$
+\begin{align*}
+u(t) &= (1 - t)^2 \cdot 0 + 2(1 - t)t \cdot 0.5 + t^2 \cdot 1 = t \\
+v(t) &= (1 - t)^2 \cdot 0 + 2(1 - t)t \cdot 0 + t^2 \cdot 1 = t^2
+\end{align*}
+$$
+
+We need to find $t$ such that both equations hold.
+Knowing that $t^2 = u^2(t)$ and $t^2 = v(t)$, we can see that
+$u^2(t) = v(t)$, or $u^2 - v = 0$.
+This is the equation we used in the fragment shader.
+
+Fragment shader does the hard job of interpolating UV coordinates and by
+cleverly selecting UV coordinates for the Bézier curve, the condition in
+the fragment shader is simplified to a single equation. Thus, we use
+the GPU to do the heavy lifting for us.
