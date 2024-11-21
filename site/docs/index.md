@@ -46,4 +46,4 @@ MIT
 
 ## How it works
 
-Check out the [How it works](./how-it-works/) guide to learn the internals of the plugin.
+Check out the [How it works](under-the-hood/) guide to learn the internals of the plugin.
