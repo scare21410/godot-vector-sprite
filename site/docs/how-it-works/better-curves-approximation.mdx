@@ -1,9 +1,11 @@
 ---
-title: Better curves approximation
+slug: /under-the-hood/rendering/better-curves-approximation
 sidebar_position: 20
 ---
-
 import GpuBezierCurveTriangle from '@site/src/infrastructure/react/gpu-bezier-curve-triangle';
+import aliasedBezierCurveProgramFactory from '@site/src/infrastructure/webgl/aliased-bezier-curve-program-factory';
+
+# Better curves approximation
 
 As we saw in the [previous section](./approximating-curves/),
 approximating curves with line segments is not ideal.
@@ -130,6 +132,7 @@ outside the curve. The algorithm is described in the [GPU Gems article](https://
         className="shadow--md"
         width={200}
         height={200}
+        programFactory={aliasedBezierCurveProgramFactory}
       />
       <p>GPU rendered quadratic Bézier curve</p>
     </div>
@@ -139,9 +142,7 @@ outside the curve. The algorithm is described in the [GPU Gems article](https://
         width={200}
         height={200}
         viewBox={[125, 90, 25, 25]}
-        p0={{x: 20, y: 180}}
-        p1={{x: 180, y: 20}}
-        p2={{x: 180, y: 180}}
+        programFactory={aliasedBezierCurveProgramFactory}
       />
       <p>GPU rendered quadratic Bézier curve (8x zoom)</p>
     </div>

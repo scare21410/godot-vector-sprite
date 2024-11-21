@@ -1,5 +1,4 @@
 import React, { useEffect, useRef, useState } from 'react';
-import bezierCurveProgramFactory from '../webgl/bezier-curve-program-factory';
 import calculateProjectionMatrix from '../../application/matrix/calculate-projection-matrix';
 
 type ProgramContext = {
@@ -8,12 +7,17 @@ type ProgramContext = {
   projectionMatrixLocation: WebGLUniformLocation;
 };
 
-function setupScene(canvas: HTMLCanvasElement): ProgramContext | undefined {
+type ProgramFactory = (gl: WebGL2RenderingContext) => WebGLProgram;
+
+function setupScene(
+  canvas: HTMLCanvasElement,
+  programFactory: ProgramFactory,
+): ProgramContext | undefined {
   const gl = canvas.getContext('webgl2');
   if (!gl) {
     return;
   }
-  const program = bezierCurveProgramFactory(gl);
+  const program = programFactory(gl);
 
   // position buffer
   const trianglePositionsBuffer = gl.createBuffer();
@@ -95,6 +99,7 @@ function drawScene(
 type Props = {
   width: number;
   height: number;
+  programFactory: ProgramFactory;
   viewBox?: [number, number, number, number];
   className?: string;
 };
@@ -102,6 +107,7 @@ type Props = {
 export default function GpuBezierCurveTriangle({
   width,
   height,
+  programFactory,
   viewBox,
   className,
 }: Props) {
@@ -113,7 +119,7 @@ export default function GpuBezierCurveTriangle({
 
   useEffect(() => {
     if (canvasRef.current) {
-      setProgramContext(setupScene(canvasRef.current));
+      setProgramContext(setupScene(canvasRef.current, programFactory));
     }
   }, [canvasRef.current]);
 

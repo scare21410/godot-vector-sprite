@@ -35,6 +35,10 @@
     color: var(--ifm-color-primary);
 }
 
+.secondary-color {
+    color: var(--ifm-color-secondary);
+}
+
 .interactive-area {
   cursor: pointer;
   &:hover {

@@ -1,7 +1,8 @@
 ---
-title: How it works
+slug: /under-the-hood
 sidebar_position: 1
 ---
+# Under the hood
 
 Drawing a vector graphics on modern computers is a complex process.
 The Godot Engine uses the OpenGL / Vulcan API to render graphics on the screen.

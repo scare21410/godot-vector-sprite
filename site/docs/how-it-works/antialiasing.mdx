@@ -1,0 +1,172 @@
+---
+sidebar_position: 40
+---
+import GpuBezierCurveTriangle from '@site/src/infrastructure/react/gpu-bezier-curve-triangle';
+import aliasedBezierCurveProgramFactory from '@site/src/infrastructure/webgl/aliased-bezier-curve-program-factory';
+import antialiasedBezierCurveProgramFactory from '@site/src/infrastructure/webgl/antialiased-bezier-curve-program-factory';
+
+# Antialiasing
+
+Let's get rid of those jagged edges! To make the edges of the shapes look smooth,
+we shall calculate the alpha value of the pixel based on the coverage of the shape.
+For example, if the shape covers 50% of the pixel, the alpha value of the pixel will be 0.5.
+This way, the pixel will be blended with the background color, making the edges look smooth.
+
+The way to calculate the alpha value of the pixel is directly taken from the
+[GPU Gems article](https://developer.nvidia.com/gpugems/gpugems3/part-iv-image-effects/chapter-25-rendering-vector-art-gpu).
+
+The gist of the algorithm is:
+* Calculate the signed distance of the fragment center to the curve
+  * The value is the distance in pixels from the fragment center to the curve
+  * If the curve passes through the center of the fragment, the distance will be 0
+  * If the fragment center lies outside the curve, the distance will be greater than 0
+    and if the fragment center lies inside the curve, the distance will be less than 0.
+  * If the curve passes through the fragment the distance will be in
+    the interval $(-1/2, +1/2)$.
+  * The distance is calculated using the following formula:
+    $$
+    sd(x, y) = \frac{f(x, y)}{|\nabla{f(x, y)}|}
+    $$
+    where:
+    * $f(x, y) = u^2(x, y) - v(x, y)$ - see [Better curves approximation](/docs/under-the-hood/rendering/better-curves-approximation)
+      for details
+* Use the signed distance to approximate fragment alpha value
+  * How much the curve covers the fragment is approximated directly using the signed distance
+  * The coverage in the interval $(-1/2, +1/2)$ is converted to alpha value in the interval $(0, 1)$
+    using the formula $0.5 - sd(x, y)$.
+
+## Signed distance calculation
+
+We approximate the signed distance of the fragment center to the curve using the formula
+$sd(x, y) = \frac{f(x, y)}{|\nabla{f(x, y)}|}$.
+
+You can see for example [here](https://iquilezles.org/articles/distance/) why the formula works.
+
+The gradient thing $\nabla{f(x, y)}$ may look intimidating, but it's just a vector of partial derivatives
+of the function $f(x, y)$ in x and y directions. Since we know the function $f(x, y)$, we can calculate
+the partial derivatives directly using the chain rule:
+$$
+\begin{align*}
+  \frac{\partial{f(x, y)}}{\partial{x}} &= 2u(x, y)\frac{\partial{u(x, y)}}{\partial{x}} - \frac{\partial{v(x, y)}}{\partial{x}} \\
+  \frac{\partial{f(x, y)}}{\partial{y}} &= 2u(x, y)\frac{\partial{u(x, y)}}{\partial{y}} - \frac{\partial{v(x, y)}}{\partial{y}}
+\end{align*}
+$$
+
+Let's now see which parts of the equation correspond to which shader variables:
+  - $u(x, y)$ - `v_bezier_uv.x`
+  - $v(x, y)$ - `v_bezier_uv.y`
+  - $\frac{\partial{u(x, y)}}{\partial{x}}$ - `dFdx(v_bezier_uv.xy).x`
+  - $\frac{\partial{v(x, y)}}{\partial{x}}$ - `dFdx(v_bezier_uv.xy).y`
+  - $\frac{\partial{u(x, y)}}{\partial{y}}$ - `dFdy(v_bezier_uv.xy).x`
+  - $\frac{\partial{v(x, y)}}{\partial{y}}$ - `dFdy(v_bezier_uv.xy).y`
+
+In each fragment shader run, the `v_bezier_uv` variable is constant for the whole fragment,
+but because we get different values of `v_bezier_uv` for each fragment, we can consider
+`v_bezier_uv` as a function of x and y.
+
+## Alpha value calculation
+
+The alpha value of the fragment is calculated using the formula $0.5 - sd(x, y)$.
+The formula is used to approximate the coverage of the curve in the fragment.
+The coverage is in the interval $(-1/2, +1/2)$, and the formula converts it to the interval $(0, 1)$.
+
+## Implementation
+
+To implement the anti-aliased curve, we will introduce two constants in the fragment shader:
+  - `CURVE_SD` - the signed distance of the fragment center to the curve
+  - `CURVE_ALPHA` - the alpha value of the fragment calculated based on the signed distance
+
+:::note
+The `CURVE_SD` and `CURVE_ALPHA` constants will be eventually available in
+Godot's shader language for vector canvas items.
+:::
+
+The vertex shader and fragment shader code for the anti-aliased curve are:
+
+```glsl title="Vertex shader"
+#version 300 es
+in vec2 a_position;
+in vec2 a_bezier_uv;
+uniform mat4 u_projection;
+out vec2 v_bezier_uv;
+
+void main() {
+  v_bezier_uv = a_bezier_uv;
+  gl_Position = u_projection * vec4(a_position, 0.0, 1.0);
+}
+```
+
+```glsl title="Fragment shader"
+#version 300 es
+precision mediump float;
+in vec2 v_bezier_uv;
+out vec4 color;
+
+void main() {
+  vec2 dx = dFdx(v_bezier_uv.xy);
+  vec2 dy = dFdy(v_bezier_uv.xy);
+  float gradX = 2.0 * v_bezier_uv.x * dx.x - dx.y;
+  float gradY = 2.0 * v_bezier_uv.x * dy.x - dy.y;
+  float CURVE_SD = (v_bezier_uv.x * v_bezier_uv.x - v_bezier_uv.y) /
+    sqrt(gradX * gradX + gradY * gradY);
+  float CURVE_ALPHA = clamp(0.5 - CURVE_SD, 0.0, 1.0);
+
+  if (CURVE_ALPHA == 0.0) {
+    color = vec4(235.0/255.0, 237.0/255.0, 240.0/255.0, 1.0); // gray
+  } else if (CURVE_ALPHA == 1.0) {
+    color = vec4(62.0/255.0, 142.0/255.0, 204.0/255.0, 1.0); // blue
+  } else {
+    color = mix(
+      vec4(235.0/255.0, 237.0/255.0, 240.0/255.0, 1.0),
+      vec4(62.0/255.0, 142.0/255.0, 204.0/255.0, 1.0),
+      CURVE_ALPHA
+    );
+  }
+}
+```
+
+## Example
+
+We use quite a lot of approximations in the formula:
+  - Our signed distance formula is just an approximation of the distance of
+    the fragment center to the curve
+  - The gradient is calculated using $dFdx$ and $dFdy$ functions, which are approximations
+    of the partial derivatives
+  - The fragment coverage is approximated using the signed distance value
+
+Will the approximation be good enough? Let's see the result:
+
+<div className="container">
+  <div className="row">
+    <div className="col col--4 text--center">
+      <GpuBezierCurveTriangle
+        width={200}
+        height={200}
+        programFactory={aliasedBezierCurveProgramFactory}
+        className="shadow--md"
+      />
+      <p>Aliased curve</p>
+    </div>
+
+    <div className="col col--4 text--center">
+      <GpuBezierCurveTriangle
+        width={200}
+        height={200}
+        programFactory={antialiasedBezierCurveProgramFactory}
+        className="shadow--md"
+      />
+      <p>Anti-aliased curve</p>
+    </div>
+
+    <div className="col col--4 text--center">
+      <GpuBezierCurveTriangle
+        width={200}
+        height={200}
+        programFactory={antialiasedBezierCurveProgramFactory}
+        viewBox={[125, 90, 25, 25]}
+        className="shadow--md"
+      />
+      <p>Zoomed-in anti-aliased curve</p>
+    </div>
+  </div>
+</div>
